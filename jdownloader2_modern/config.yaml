@@ -25,6 +25,12 @@ ports:
 ports_description:
   5800/tcp: JDownloader web interface
 webui: http://[HOST]:[PORT:5800]
+ingress: true
+ingress_port: 5800
+ingress_stream: true
+panel_icon: mdi:download
+panel_title: JDownloader
+panel_admin: true
 map:
   - addon_config:rw
   - media:rw
