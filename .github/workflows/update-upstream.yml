@@ -1,0 +1,96 @@
+name: Check upstream image
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-upstream
+  cancel-in-progress: false
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Find latest stable upstream tag
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest="$({
+            curl --fail --silent --show-error --retry 3 \
+              "https://hub.docker.com/v2/repositories/jlesage/jdownloader-2/tags?page_size=100&ordering=last_updated"
+          } | jq -r '.results[].name' \
+            | grep -E '^v[0-9]{2}\.[0-9]{2}\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1)"
+
+          if [[ -z "${latest}" ]]; then
+            echo "No stable upstream tag was found." >&2
+            exit 1
+          fi
+
+          current="$(sed -n 's/^version: "\(v[^"]*\)"/\1/p' jdownloader2_modern/config.yaml)"
+
+          if [[ -z "${current}" ]]; then
+            echo "Current app version could not be read." >&2
+            exit 1
+          fi
+
+          echo "current=${current}"
+          echo "latest=${latest}"
+          echo "current=${current}" >> "${GITHUB_OUTPUT}"
+          echo "latest=${latest}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "$(printf '%s\n%s\n' "${current}" "${latest}" | sort -V | tail -n 1)" == "${latest}" \
+            && "${current}" != "${latest}" ]]; then
+            echo "update=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "update=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Update app manifest and changelog
+        if: steps.upstream.outputs.update == 'true'
+        env:
+          CURRENT_VERSION: ${{ steps.upstream.outputs.current }}
+          LATEST_VERSION: ${{ steps.upstream.outputs.latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sed -i "s/^version: \"${CURRENT_VERSION}\"/version: \"${LATEST_VERSION}\"/" \
+            jdownloader2_modern/config.yaml
+
+          changelog_entry="$(mktemp)"
+          {
+            printf '# Changelog\n\n'
+            printf '## %s\n\n' "${LATEST_VERSION}"
+            printf -- '- Updated container image from `%s` to `%s`.\n\n' \
+              "${CURRENT_VERSION}" "${LATEST_VERSION}"
+            tail -n +3 jdownloader2_modern/CHANGELOG.md
+          } > "${changelog_entry}"
+          mv "${changelog_entry}" jdownloader2_modern/CHANGELOG.md
+
+      - name: Commit update
+        if: steps.upstream.outputs.update == 'true'
+        env:
+          LATEST_VERSION: ${{ steps.upstream.outputs.latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add jdownloader2_modern/config.yaml jdownloader2_modern/CHANGELOG.md
+          git commit -m "Update jlesage container to ${LATEST_VERSION}"
+          git push
+
