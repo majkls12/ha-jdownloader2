@@ -1,5 +1,9 @@
 # Changelog
 
+## v26.08.2
+
+- Updated container image from `v26.07.2` to `v26.08.2`.
+
 ## v26.07.2
 
 - Initial public test release.
