@@ -1,5 +1,9 @@
 # Changelog
 
+## v26.09.1
+
+- Updated container image from `v26.08.2` to `v26.09.1`.
+
 ## v26.08.2
 
 - Updated container image from `v26.07.2` to `v26.08.2`.
